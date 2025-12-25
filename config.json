@@ -1,0 +1,22 @@
+{
+    "general_data": {
+        "window_width": 1920,
+        "window_height": 1020,
+        "game_speed": 250
+    },
+    "player_data": {
+        "player_speed": 200,
+        "start_x": 100, 
+        "start_y": 300, 
+        "width": 50,
+        "height": 50,
+        "color": [255, 0, 0]
+    },
+    "enemy_data": {
+        "start_x": 250,
+        "start_y": 250,
+        "width": 50,
+        "height": 50,
+        "color": [0, 0, 255]
+    }
+}
