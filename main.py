@@ -2,6 +2,8 @@ import pygame
 import json
 import sys
 import random
+import os
+import time
 # Load configuration from JSON files
 with open('config.json', 'r') as f:
     config = json.load(f)
@@ -33,11 +35,13 @@ max_fps = user_config.get("max_framerate", 60)
 # Initialize Pygame and create window
 pygame.init()
 screen = pygame.display.set_mode((window_width, window_height))
-pygame.display.set_caption("ZapFire - Alpha 1.0.1")
+pygame.display.set_caption("ZapFire - Alpha 1.0.2")
 clock = pygame.time.Clock()
 running = True
 game_speed = 250                 # pixels per second | Tick Rate
-
+# get seed by os time
+seed = time.time() % 1000  # Random Seed based on system time
+random.seed(seed)
 # Player Class
 class Player:
     def __init__(self, x, y, speed):
@@ -67,12 +71,15 @@ class Enemy:
         self.center_y = self.y + self.height // 2
         self.color = (0, 0, 255)
         # Role definition (what enemy type?)
-        self.type = random.choice(['pawn', 'archer', 'knight'])
+        #self.type = random.choice(['pawn', 'archer', 'knight'])
+        self.type = 'pawn' # for testing purposes, set to pawn
         self.speed = 100
         self.health = 100
         self.usual_goal = "hunt"
         self.goal = "hunt"
         self.attack_type = "melee"
+        self.hit_radius = 0.3
+        self.distance_to_player = 0
         self.xy_goal = [100,100]
 
 
@@ -89,42 +96,98 @@ class Enemy:
             self.health = 50
             self.attack_type = "melee"
             self.speed = 150
+            self.hit_radius = 100
             self.color = (0, 200, 0) # green
         elif self.type == 'archer':
             self.health = 75
             self.attack_type = "ranged"
             self.speed = 120
+            self.hit_radius = 300
             self.color = (255, 165, 0) # orange
         elif self.type == 'knight':
             self.health = 150
             self.attack_type = "melee"
             self.speed = 80
+            self.hit_radius = 150
             self.color = (128, 0, 128) # purple
         else:
             self.health = 100
             self.attack_type = "melee"
             self.speed = 100
             self.color = (255, 255, 255) # white
+    def spawn(self):
+        wall = random.randint(1, 4) # 1 = top, 2 = right, 3 = bottom, 4 = left
+        if wall == 1: # top
+            self.x = random.randint(0, window_width - self.width)
+            self.y = 0 - self.height
+        elif wall == 2: # right
+            self.x = window_width - self.width
+            self.y = random.randint(0, window_height - self.height - self.height)
+        elif wall == 3: # bottom
+            self.x = random.randint(0, window_width - self.width)
+            self.y = window_height - self.height
+        elif wall == 4: # left
+            self.x = 0 - self.width
+            self.y = random.randint(0, window_height - self.height - self.height)
+    def attack(self):
+        pass
     def set_goal(self, goal):
         self.goal = goal
     def set_xy_goal(self, x, y):
         if self.type == 'pawn':
-            self.xy_goal = player.center_x, player.center_y
+            self.xy_goal = [x, y]
         elif self.type == 'archer':
-            pass
+            self.xy_goal = [x, y] # player holder since the archer attacks from distance
         elif self.type == 'knight':
-            pass
+            self.xy_goal = [x, y]
     def move_towards_goal(self, dt):
-        pass
-    def attack(self):
-        pass
+        if self.xy_goal is None: 
+            print("No goal set for enemy. Or goal is None.")
+            return # if NO xy_goal is set, do nothing and exit the function
+        # we can also check other states like "stunned" or "frozen" here!
+        dir_x = player.x - self.x
+        dir_y = player.y - self.y
+        # Calculate the length (magnitude) of the direction vector
+        # This is the Euclidean distance between current position and goal
+        # Formula: sqrt(dx^2 + dy^2)
+        # It tells us HOW FAR the entity is from the goal
+        self.distance_to_player = (dir_x**2 + dir_y**2) ** 0.5
+        if self.distance_to_player > self.hit_radius:
+            
+            # Calculate the difference between the goal position and the current position
+            # This creates a direction vector pointing FROM the entity TO the goal
+
+            # Normalize the direction vector:
+            # Divide each component by the vector length
+            # Result: a unit vector (length = 1) that keeps direction but removes distance
+            # This allows us to move in the correct direction at a constant speed regardless of how far we are from the goal
+            # if we didn't normalize, the entity would move faster when further away and slower when closer
+            norm_x = dir_x / self.distance_to_player
+            norm_y = dir_y / self.distance_to_player
+
+            # Move the entity towards the goal
+            # speed * dt enshures frame-rate independent movement
+            # The normalized vector enshures constant speed regardless of distance
+            self.x += norm_x * self.speed * dt
+            self.y += norm_y * self.speed * dt
+
 
 
     def setup_enemy(self):
+        self.spawn()
         self.define_role()
         self.set_goal(goal=None)
         self.set_xy_goal(x=0, y=0)
-
+    def update_enemy(self):
+        # This will calculate where the player is minus the attack radius so it will stop at that distance
+        dir_x = player.x - self.x
+        dir_y = player.y - self.y
+        distance_to_player = (dir_x**2 + dir_y**2) ** 0.5
+        if distance_to_player > self.hit_radius:
+            self.set_xy_goal(player.x - (dir_x / distance_to_player) * self.hit_radius, player.y - (dir_y / distance_to_player) * self.hit_radius) # the goal is player position minus hit radius in every direction
+        else:
+            #pass
+            self.set_xy_goal(self.x, self.y) # stay in place when goal is reached
 class System:
     def __init__(self):
         self.debug_mode = False
@@ -139,7 +202,7 @@ class System:
             player_y_debug = fontObj.render(f"Player Y: {player.y:.0f}", True, TEXTCOLOR, None) 
             screen.blit(player_y_debug, (10, 34))
 
-            enemy_goal_debug = fontObj.render(f"Enemy Goal: {enemy.xy_goal}", True, TEXTCOLOR, None)
+            enemy_goal_debug = fontObj.render(f"Enemy Goal:[{enemy.xy_goal[0]:.0f}, {enemy.xy_goal[1]:.0f}]", True, TEXTCOLOR, None)
             # center the text above the enemy
             screen.blit(enemy_goal_debug, (enemy.x - 75, enemy.center_y - 50))
 
@@ -171,7 +234,7 @@ while running:
         if event.type == pygame.QUIT:
             pygame.quit(); sys.exit()
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_F3:
-            system.debug_mode = not system.debug_mode
+            system.debug_mode = not system.debug_mode # Toggle debug mode on/off (True/False)
 
     keys = pygame.key.get_pressed()
     if keys[pygame.K_w] and not player.y <= 0: player.y -= player.speed * dt # if player is not at the top edge: move up 
@@ -182,7 +245,11 @@ while running:
 
     screen.fill(BACKGROUND)
     player.draw(screen)
+
     enemy.draw(screen)
+    enemy.move_towards_goal(dt)
+    enemy.update_enemy()
+
     system.toggle_debug()
 
     pygame.display.flip()
